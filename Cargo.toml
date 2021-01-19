@@ -8,5 +8,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
+async-std = { version = "1", features = ["attributes"] }
+git2 = "0.13"
 mlmd = "0.1"
 structopt = "0.3"

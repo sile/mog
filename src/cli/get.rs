@@ -1,8 +1,93 @@
+use crate::util;
+
 #[derive(Debug, structopt::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 pub enum GetOpt {
-    Artifacts,
-    Contexts,
-    Events,
-    Executions,
+    Artifacts(GetArtifactsOpt),
+    Contexts(GetContextsOpt),
+    Events(GetEventsOpt),
+    Executions(GetExecutionsOpt),
+}
+
+impl GetOpt {
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        match self {
+            Self::Artifacts(opt) => opt.execute().await,
+            Self::Contexts(opt) => opt.execute().await,
+            Self::Events(opt) => opt.execute().await,
+            Self::Executions(opt) => opt.execute().await,
+        }
+    }
+}
+
+#[derive(Debug, structopt::StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+pub struct GetArtifactsOpt {
+    #[structopt(long, env = "MLMD_DATABASE_URI", hide_env_values = true)]
+    pub database: String,
+}
+
+impl GetArtifactsOpt {
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        let mut store = util::mlmd_connect(&self.database).await?;
+        let artifacts = store.get_artifacts().execute().await?;
+        for artifact in artifacts {
+            println!("{:?}", artifact);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, structopt::StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+pub struct GetContextsOpt {
+    #[structopt(long, env = "MLMD_DATABASE_URI", hide_env_values = true)]
+    pub database: String,
+}
+
+impl GetContextsOpt {
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        let mut store = util::mlmd_connect(&self.database).await?;
+        let contexts = store.get_contexts().execute().await?;
+        for context in contexts {
+            println!("{:?}", context);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, structopt::StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+pub struct GetEventsOpt {
+    #[structopt(long, env = "MLMD_DATABASE_URI", hide_env_values = true)]
+    pub database: String,
+}
+
+impl GetEventsOpt {
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        let mut store = util::mlmd_connect(&self.database).await?;
+        let events = store.get_events().execute().await?;
+        for event in events {
+            println!("{:?}", event);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, structopt::StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+pub struct GetExecutionsOpt {
+    #[structopt(long, env = "MLMD_DATABASE_URI", hide_env_values = true)]
+    pub database: String,
+}
+
+impl GetExecutionsOpt {
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        let mut store = util::mlmd_connect(&self.database).await?;
+        let executions = store.get_executions().execute().await?;
+        for execution in executions {
+            println!("{:?}", execution);
+        }
+        Ok(())
+    }
 }

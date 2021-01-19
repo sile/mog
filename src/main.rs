@@ -8,7 +8,13 @@ enum Opt {
     Run,
 }
 
-fn main() -> anyhow::Result<()> {
+#[async_std::main]
+async fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
+    match opt {
+        Opt::Dashboard => todo!(),
+        Opt::Get(opt) => opt.execute().await?,
+        Opt::Run => todo!(),
+    }
     Ok(())
 }
