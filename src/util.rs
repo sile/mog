@@ -1,3 +1,4 @@
+use crate::env;
 use anyhow::Context;
 
 pub async fn mlmd_connect(database_uri: &str) -> anyhow::Result<mlmd::MetadataStore> {
@@ -5,4 +6,16 @@ pub async fn mlmd_connect(database_uri: &str) -> anyhow::Result<mlmd::MetadataSt
         .await
         .with_context(|| format!("cannot connect to the database: {:?}", database_uri))?;
     Ok(store)
+}
+
+#[derive(Debug, structopt::StructOpt)]
+pub struct MetadataStoreOpt {
+    #[structopt(long, env = env::KEY_DATABASE, hide_env_values = true)]
+    pub database: String,
+}
+
+impl MetadataStoreOpt {
+    pub async fn connect(&self) -> anyhow::Result<mlmd::MetadataStore> {
+        mlmd_connect(&self.database).await
+    }
 }

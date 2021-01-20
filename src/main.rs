@@ -5,7 +5,7 @@ use structopt::StructOpt;
 enum Opt {
     Dashboard,
     Get(mog::cli::get::GetOpt),
-    Run,
+    Run(mog::cli::run::RunOpt),
 }
 
 #[async_std::main]
@@ -14,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
     match opt {
         Opt::Dashboard => todo!(),
         Opt::Get(opt) => opt.execute().await?,
-        Opt::Run => todo!(),
+        Opt::Run(opt) => opt.execute().await?,
     }
     Ok(())
 }

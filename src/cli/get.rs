@@ -1,3 +1,4 @@
+use crate::env;
 use crate::util;
 
 #[derive(Debug, structopt::StructOpt)]
@@ -23,7 +24,7 @@ impl GetOpt {
 #[derive(Debug, structopt::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 pub struct GetArtifactsOpt {
-    #[structopt(long, env = "MLMD_DATABASE_URI", hide_env_values = true)]
+    #[structopt(long, env = env::KEY_DATABASE, hide_env_values = true)]
     pub database: String,
 }
 
@@ -41,7 +42,7 @@ impl GetArtifactsOpt {
 #[derive(Debug, structopt::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 pub struct GetContextsOpt {
-    #[structopt(long, env = "MLMD_DATABASE_URI", hide_env_values = true)]
+    #[structopt(long, env = env::KEY_DATABASE, hide_env_values = true)]
     pub database: String,
 }
 
@@ -59,7 +60,7 @@ impl GetContextsOpt {
 #[derive(Debug, structopt::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 pub struct GetEventsOpt {
-    #[structopt(long, env = "MLMD_DATABASE_URI", hide_env_values = true)]
+    #[structopt(long, env = env::KEY_DATABASE, hide_env_values = true)]
     pub database: String,
 }
 
@@ -77,7 +78,7 @@ impl GetEventsOpt {
 #[derive(Debug, structopt::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 pub struct GetExecutionsOpt {
-    #[structopt(long, env = "MLMD_DATABASE_URI", hide_env_values = true)]
+    #[structopt(long, env = env::KEY_DATABASE, hide_env_values = true)]
     pub database: String,
 }
 
