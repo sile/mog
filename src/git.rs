@@ -4,15 +4,23 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct GitInfo {
-    commit: git2::Oid,
-    origin_url: GitUrl,
-    is_dirty: bool,
-    current_dir: PathBuf,
+    pub commit: git2::Oid,
+    pub origin_url: GitUrl,
+    pub is_dirty: bool,
+    pub current_dir: PathBuf,
 }
 
 impl GitInfo {
     pub fn repository_name(&self) -> &str {
         &self.origin_url.name
+    }
+
+    pub fn https_url(&self) -> Option<String> {
+        if let Some(host) = &self.origin_url.host {
+            Some(format!("https://{}/{}", host, self.origin_url.fullname))
+        } else {
+            None
+        }
     }
 }
 
