@@ -1,6 +1,7 @@
 use crate::env;
 use crate::git;
 use crate::util::MetadataStoreOpt;
+use anyhow::Context as _;
 use std::process::Command;
 
 #[derive(Debug, structopt::StructOpt)]
@@ -8,8 +9,11 @@ pub struct RunOpt {
     #[structopt(flatten)]
     pub mlmd: MetadataStoreOpt,
 
-    #[structopt(long = "env")]
+    #[structopt(long = "env", name = "KEY(=VALUE)")]
     pub envs: Vec<EnvKeyValue>,
+
+    #[structopt(long = "secret-env", name = "KEY(=VALUE)")]
+    pub secret_envs: Vec<EnvKeyValue>,
 
     // context
     // tempdir, persistent-if-fail, upload
@@ -37,6 +41,10 @@ impl RunOpt {
         for env in &self.envs {
             custom_properties.insert(format!("env_{}", env.key), env.value.clone().into());
         }
+        for env in &self.secret_envs {
+            custom_properties.insert(format!("secret_env_{}", env.key), "".into());
+        }
+
         let execution_id = store
             .post_execution(execution_type_id)
             .properties(properties.property_values())
@@ -47,6 +55,9 @@ impl RunOpt {
 
         let mut command = Command::new(&self.command_name);
         for env in &self.envs {
+            command.env(&env.key, &env.value);
+        }
+        for env in &self.secret_envs {
             command.env(&env.key, &env.value);
         }
         let mut child = command
@@ -148,13 +159,14 @@ impl std::str::FromStr for EnvKeyValue {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut iter = s.splitn(2, '=');
-        let key = iter.next().expect("unreachable");
-        let value = iter
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("{:?} doesn't have a value", key))?;
-        Ok(Self {
-            key: key.to_owned(),
-            value: value.to_owned(),
-        })
+        let key = iter.next().expect("unreachable").to_owned();
+        let value = if let Some(value) = iter.next() {
+            value.to_owned()
+        } else {
+            std::env::var(&key)
+                .with_context(|| format!("cannot get the value of the envvar {:?}", key))?
+                .to_owned()
+        };
+        Ok(Self { key, value })
     }
 }

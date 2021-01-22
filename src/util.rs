@@ -10,7 +10,7 @@ pub async fn mlmd_connect(database_uri: &str) -> anyhow::Result<mlmd::MetadataSt
 
 #[derive(Debug, structopt::StructOpt)]
 pub struct MetadataStoreOpt {
-    #[structopt(long, env = env::KEY_DATABASE, hide_env_values = true)]
+    #[structopt(long, name="URI", env = env::KEY_DATABASE, hide_env_values = true)]
     pub database: String,
 }
 
