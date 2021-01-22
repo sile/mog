@@ -2,22 +2,28 @@ use crate::env;
 use crate::git;
 use crate::util::MetadataStoreOpt;
 use anyhow::Context as _;
+use std::io::{Read as _, Write as _};
+use std::path::PathBuf;
 use std::process::Command;
+use tempfile::NamedTempFile;
 
 #[derive(Debug, structopt::StructOpt)]
 pub struct RunOpt {
     #[structopt(flatten)]
     pub mlmd: MetadataStoreOpt,
 
-    #[structopt(long = "env", name = "KEY(=VALUE)")]
+    #[structopt(long = "env")]
     pub envs: Vec<EnvKeyValue>,
 
-    #[structopt(long = "secret-env", name = "KEY(=VALUE)")]
+    #[structopt(long = "secret-env")]
     pub secret_envs: Vec<EnvKeyValue>,
 
+    // TODO: rename (object-store?)
+    #[structopt(long)]
+    pub storage: Option<PathBuf>,
+
     // context
-    // tempdir, persistent-if-fail, upload
-    // capture-{stdout, stderr}
+    // tempdir
     // forbid-dirty
     pub command_name: String,
     pub command_args: Vec<String>,
@@ -60,23 +66,128 @@ impl RunOpt {
         for env in &self.secret_envs {
             command.env(&env.key, &env.value);
         }
-        let mut child = command
+        let child = command
             .args(self.command_args.iter())
             .env(env::KEY_CURRENT_EXECUTION_ID, execution_id.to_string())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()?;
         store
             .put_execution(execution_id)
             .state(mlmd::metadata::ExecutionState::Running)
             .execute()
             .await?;
-        child.wait()?;
-        store
-            .put_execution(execution_id)
-            .state(mlmd::metadata::ExecutionState::Complete)
-            .execute()
-            .await?;
+
+        // TODO: signal handling
+        let result = Runner::new(child, self)
+            .map(|runner| runner.run())
+            .unwrap_or_else(|e| RunResult {
+                result: Err(e.into()),
+                stdout_uri: None,
+                stderr_uri: None,
+            });
+        let state = if result.result.is_ok() {
+            mlmd::metadata::ExecutionState::Complete
+        } else {
+            mlmd::metadata::ExecutionState::Failed
+        };
+        let mut put_request = store.put_execution(execution_id).state(state);
+        if let Some(v) = &result.stdout_uri {
+            put_request = put_request.property::<&str>("stdout_uri", v.as_str().into());
+        }
+        if let Some(v) = &result.stderr_uri {
+            put_request = put_request.property::<&str>("stderr_uri", v.as_str().into());
+        }
+        put_request.execute().await?;
+        result.result?;
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct RunResult {
+    result: anyhow::Result<std::process::ExitStatus>,
+    stdout_uri: Option<String>,
+    stderr_uri: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct Runner {
+    child: std::process::Child,
+    stdout: NamedTempFile,
+    stderr: NamedTempFile,
+    storage: Option<PathBuf>,
+}
+
+impl Runner {
+    pub fn new(child: std::process::Child, opt: &RunOpt) -> anyhow::Result<Self> {
+        Ok(Self {
+            child,
+            stdout: NamedTempFile::new()?,
+            stderr: NamedTempFile::new()?,
+            storage: opt.storage.clone(),
+        })
+    }
+
+    pub fn run(mut self) -> RunResult {
+        let mut result = RunResult {
+            result: self.run_inner(),
+            stdout_uri: None,
+            stderr_uri: None,
+        };
+        let _ = self.stdout.flush();
+        let _ = self.stderr.flush();
+
+        if let Some(storage) = &self.storage {
+            let output = std::process::Command::new(storage)
+                .arg(self.stdout.path())
+                .stderr(std::process::Stdio::inherit())
+                .output()
+                .expect("TODO");
+            if output.status.success() {
+                result.stdout_uri = Some(
+                    String::from_utf8(output.stdout)
+                        .expect("TODO")
+                        .trim()
+                        .to_owned(),
+                );
+            }
+
+            let output = std::process::Command::new(storage)
+                .arg(self.stderr.path())
+                .stderr(std::process::Stdio::inherit())
+                .output()
+                .expect("TODO");
+            if output.status.success() {
+                result.stderr_uri = Some(
+                    String::from_utf8(output.stdout)
+                        .expect("TODO")
+                        .trim()
+                        .to_owned(),
+                );
+            }
+        }
+        result
+    }
+
+    fn run_inner(&mut self) -> anyhow::Result<std::process::ExitStatus> {
+        let mut buf = vec![0u8; 4096];
+        loop {
+            if let Some(r) = &mut self.child.stdout {
+                let n = r.read(&mut buf)?;
+                self.stdout.write_all(&buf[..n])?;
+                std::io::stdout().write_all(&buf[..n])?;
+            }
+            if let Some(r) = &mut self.child.stderr {
+                let n = r.read(&mut buf)?;
+                self.stderr.write_all(&buf[..n])?;
+                std::io::stderr().write_all(&buf[..n])?;
+            }
+            if let Some(exit_status) = self.child.try_wait()? {
+                return Ok(exit_status);
+            }
+        }
     }
 }
 
@@ -117,6 +228,8 @@ impl ExecutionProperties {
             ("git_url", PropertyType::String),
             ("git_cwd", PropertyType::String),
             ("git_dirty", PropertyType::Int),
+            ("stdout_uri", PropertyType::String),
+            ("stderr_uri", PropertyType::String),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_owned(), v))

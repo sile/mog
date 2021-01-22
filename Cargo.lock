@@ -953,6 +953,7 @@ dependencies = [
  "hostname",
  "mlmd",
  "structopt",
+ "tempfile",
 ]
 
 [[package]]
