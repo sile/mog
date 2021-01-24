@@ -8,10 +8,12 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
-async-std = { version = "1", features = ["attributes"] }
+async-std = { version = "1", features = ["attributes", "tokio02"] }
 git2 = "0.13"
 git-url-parse = "0.3"
 hostname = "0.3"
 mlmd = "0.1"
+slack-hook2 = "0.10"
 structopt = "0.3"
 tempfile = "3"
+url = "2"

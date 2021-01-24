@@ -1,5 +1,6 @@
 use crate::env;
 use crate::git;
+use crate::slack::SlackWebhookOpt;
 use crate::util::MetadataStoreOpt;
 use anyhow::Context as _;
 use std::io::{Read as _, Write as _};
@@ -8,6 +9,7 @@ use std::process::Command;
 use tempfile::NamedTempFile;
 
 #[derive(Debug, structopt::StructOpt)]
+#[structopt(rename_all = "kebab-case")]
 pub struct RunOpt {
     #[structopt(flatten)]
     pub mlmd: MetadataStoreOpt,
@@ -18,13 +20,35 @@ pub struct RunOpt {
     #[structopt(long = "secret-env")]
     pub secret_envs: Vec<EnvKeyValue>,
 
+    #[structopt(long)]
+    pub execution_name: Option<String>,
+
+    #[structopt(long)]
+    pub context_id: Option<i32>,
+    // TODO: context_type, context_name (requires type)
+    // TODO: context_id_envvar (set and get)
+    // TODO: execution_id_envvar (set)
+
+    // TODO: input-artifact, wait-input-artifacts, wait-timeout
+    // TOOD: output-artifact, fail-if-output-artifacts-are-absent, skip-if-output-exist
+    #[structopt(flatten)]
+    pub slack: SlackWebhookOpt,
+
     // TODO: rename (object-store?)
     #[structopt(long)]
     pub storage: Option<PathBuf>,
 
     // context
-    // tempdir
-    // forbid-dirty
+    #[structopt(long)]
+    pub result_dir: Option<PathBuf>,
+
+    #[structopt(long)]
+    pub sweep_result_dir: bool,
+
+    // TODO: Implement this feature
+    #[structopt(long)]
+    pub forbid_dirty: bool,
+
     pub command_name: String,
     pub command_args: Vec<String>,
 }
@@ -32,6 +56,7 @@ pub struct RunOpt {
 impl RunOpt {
     pub async fn execute(&self) -> anyhow::Result<()> {
         let mut store = self.mlmd.connect().await?;
+        let slack = self.slack.build()?;
 
         let properties = ExecutionProperties::new(self)?;
 
@@ -51,13 +76,22 @@ impl RunOpt {
             custom_properties.insert(format!("secret_env_{}", env.key), "".into());
         }
 
-        let execution_id = store
+        let mut req = store
             .post_execution(execution_type_id)
             .properties(properties.property_values())
             .custom_properties(custom_properties)
-            .state(mlmd::metadata::ExecutionState::New)
-            .execute()
-            .await?;
+            .state(mlmd::metadata::ExecutionState::New);
+        if let Some(v) = &self.execution_name {
+            req = req.name(v);
+        }
+        let execution_id = req.execute().await?;
+
+        if let Some(context) = self.context_id {
+            store
+                .put_association(mlmd::metadata::ContextId::new(context), execution_id)
+                .execute()
+                .await?;
+        }
 
         let mut command = Command::new(&self.command_name);
         for env in &self.envs {
@@ -77,6 +111,9 @@ impl RunOpt {
             .state(mlmd::metadata::ExecutionState::Running)
             .execute()
             .await?;
+        slack
+            .post(&format!("Execution {} started.", execution_id.get()))
+            .await?;
 
         // TODO: signal handling
         let result = Runner::new(child, self)
@@ -85,18 +122,31 @@ impl RunOpt {
                 result: Err(e.into()),
                 stdout_uri: None,
                 stderr_uri: None,
+                result_uri: None,
             });
         let state = if result.result.is_ok() {
+            slack
+                .post(&format!("Execution {} completed.", execution_id.get()))
+                .await?;
             mlmd::metadata::ExecutionState::Complete
         } else {
+            slack
+                .post(&format!("Execution {} failed.", execution_id.get()))
+                .await?;
             mlmd::metadata::ExecutionState::Failed
         };
         let mut put_request = store.put_execution(execution_id).state(state);
+        if let Some(v) = self.storage.as_ref().and_then(|s| s.to_str()) {
+            put_request = put_request.property::<&str>("storage", v.into());
+        }
         if let Some(v) = &result.stdout_uri {
             put_request = put_request.property::<&str>("stdout_uri", v.as_str().into());
         }
         if let Some(v) = &result.stderr_uri {
             put_request = put_request.property::<&str>("stderr_uri", v.as_str().into());
+        }
+        if let Some(v) = &result.result_uri {
+            put_request = put_request.property::<&str>("result_uri", v.as_str().into());
         }
         put_request.execute().await?;
         result.result?;
@@ -110,6 +160,7 @@ pub struct RunResult {
     result: anyhow::Result<std::process::ExitStatus>,
     stdout_uri: Option<String>,
     stderr_uri: Option<String>,
+    result_uri: Option<String>,
 }
 
 #[derive(Debug)]
@@ -118,6 +169,8 @@ pub struct Runner {
     stdout: NamedTempFile,
     stderr: NamedTempFile,
     storage: Option<PathBuf>,
+    result_dir: Option<PathBuf>,
+    sweep_result_dir: bool,
 }
 
 impl Runner {
@@ -127,6 +180,8 @@ impl Runner {
             stdout: NamedTempFile::new()?,
             stderr: NamedTempFile::new()?,
             storage: opt.storage.clone(),
+            result_dir: opt.result_dir.clone(),
+            sweep_result_dir: opt.sweep_result_dir,
         })
     }
 
@@ -135,6 +190,7 @@ impl Runner {
             result: self.run_inner(),
             stdout_uri: None,
             stderr_uri: None,
+            result_uri: None,
         };
         let _ = self.stdout.flush();
         let _ = self.stderr.flush();
@@ -166,6 +222,13 @@ impl Runner {
                         .trim()
                         .to_owned(),
                 );
+            }
+
+            if let Some(result_dir) = &self.result_dir {
+                // TODO: Archive the directory and upload the result
+                if self.sweep_result_dir {
+                    let _ = std::fs::remove_dir_all(result_dir); // TODO: Emit a warning message if `Err(_)`
+                }
             }
         }
         result
@@ -228,8 +291,10 @@ impl ExecutionProperties {
             ("git_url", PropertyType::String),
             ("git_cwd", PropertyType::String),
             ("git_dirty", PropertyType::Int),
+            ("storage", PropertyType::String),
             ("stdout_uri", PropertyType::String),
             ("stderr_uri", PropertyType::String),
+            ("result_uri", PropertyType::String),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_owned(), v))
