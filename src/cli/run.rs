@@ -38,7 +38,6 @@ pub struct RunOpt {
     #[structopt(long)]
     pub storage: Option<PathBuf>,
 
-    // context
     #[structopt(long)]
     pub result_dir: Option<PathBuf>,
 
@@ -70,6 +69,7 @@ impl RunOpt {
 
         let mut custom_properties = mlmd::metadata::PropertyValues::new();
         for env in &self.envs {
+            // TODO(?): Use JSON
             custom_properties.insert(format!("env_{}", env.key), env.value.clone().into());
         }
         for env in &self.secret_envs {
@@ -125,6 +125,7 @@ impl RunOpt {
                 result_uri: None,
             });
         let state = if result.result.is_ok() {
+            // TODO: Elapsed time
             slack
                 .post(&format!("Execution {} completed.", execution_id.get()))
                 .await?;
