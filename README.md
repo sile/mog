@@ -1,4 +1,4 @@
 mog
 ===
 
-A commad-line tool to log ML experiments.
+A command-line tool to log ML experiments.
