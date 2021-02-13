@@ -22,3 +22,6 @@ slack-hook2 = "0.10"
 structopt = "0.3"
 tempfile = "3"
 url = "2"
+
+# See: https://github.com/launchbadge/sqlx/issues/1048
+funty = "=1.1.0"
