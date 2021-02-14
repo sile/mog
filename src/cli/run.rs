@@ -30,16 +30,14 @@ pub struct RunOpt {
     pub execution_id_envvar: String,
 
     #[structopt(long)]
-    pub context_id: Option<i32>,
-    // TODO: context_type, context_name (requires type)
-    // TODO: context_id_envvar (set and get)
+    pub context_name: Option<String>,
 
     // TODO: input-artifact, wait-input-artifacts, wait-timeout
     // TOOD: output-artifact, fail-if-output-artifacts-are-absent, skip-if-output-exist
     #[structopt(flatten)]
     pub slack: SlackWebhookOpt,
 
-    // TODO: rename (object-store?)
+    // object storage.
     #[structopt(long)]
     pub storage: Option<PathBuf>,
 
@@ -83,9 +81,37 @@ impl RunOpt {
         }
         let execution_id = req.execute().await?;
 
-        if let Some(context) = self.context_id {
+        let context_id = if let Some(context_name) = &self.context_name {
+            let type_name = "mog_exp@0.0";
+            let context_type_id = store.put_context_type(type_name).execute().await?;
+            let context_id = match store
+                .post_context(context_type_id, context_name)
+                .execute()
+                .await
+            {
+                Ok(id) => id,
+                Err(mlmd::errors::PostError::NameAlreadyExists { .. }) => {
+                    store
+                        .get_contexts()
+                        .type_and_name(type_name, context_name)
+                        .execute()
+                        .await?[0]
+                        .id
+                }
+                Err(e) => {
+                    return Err(e)?;
+                }
+            };
+            Some(context_id)
+        } else {
+            std::env::var(crate::env::KEY_CONTEXT_ID)
+                .ok()
+                .map(|s| s.parse().map(mlmd::metadata::ContextId::new))
+                .transpose()?
+        };
+        if let Some(context_id) = context_id {
             store
-                .put_association(mlmd::metadata::ContextId::new(context), execution_id)
+                .put_association(context_id, execution_id)
                 .execute()
                 .await?;
         }
@@ -96,6 +122,9 @@ impl RunOpt {
         }
         for env in &self.secret_envs {
             command.env(&env.key, &env.value);
+        }
+        if let Some(context_id) = context_id {
+            command.env(crate::env::KEY_CONTEXT_ID, context_id.to_string());
         }
         let child = command
             .args(self.command_args.iter())
