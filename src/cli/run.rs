@@ -44,7 +44,6 @@ pub struct RunOpt {
     #[structopt(long)]
     pub sweep_result_dir: bool,
 
-    // TODO: Implement this feature
     #[structopt(long)]
     pub forbid_dirty: bool,
 
@@ -270,13 +269,21 @@ impl ExecutionProperties {
             command += &opt.command_args.join(" ");
         }
 
+        let git = git::GitInfo::new(std::env::current_dir()?)?;
+        if opt.forbid_dirty {
+            anyhow::ensure!(
+                !git.is_dirty,
+                "there are dirty files that aren't commited to the git repository."
+            );
+        }
+
         Ok(Self {
             user: std::env::var("USER").ok(),
             hostname: hostname::get()
                 .ok()
                 .and_then(|s| s.to_str().map(|s| s.to_owned())),
             command,
-            git: git::GitInfo::new(std::env::current_dir()?)?,
+            git,
         })
     }
 
