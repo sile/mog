@@ -1,2 +1,1 @@
-pub const KEY_DATABASE: &str = "MLMD_DATABASE_URI";
-pub const KEY_CURRENT_EXECUTION_ID: &str = "MLMD_EXECUTION_ID";
+pub const KEY_DATABASE: &str = "MLMD_DATABASE_URI"; // TODO: delete(?)

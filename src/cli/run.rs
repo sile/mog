@@ -1,4 +1,3 @@
-use crate::env;
 use crate::git;
 use crate::slack::SlackWebhookOpt;
 use crate::util::MetadataStoreOpt;
@@ -27,18 +26,18 @@ pub struct RunOpt {
     #[structopt(long)]
     pub execution_name: Option<String>,
 
+    #[structopt(long, default_value = "MLMD_EXECUTION_ID")]
+    pub execution_id_envvar: String,
+
     #[structopt(long)]
     pub context_id: Option<i32>,
     // TODO: context_type, context_name (requires type)
     // TODO: context_id_envvar (set and get)
-    // TODO: execution_id_envvar (set)
 
     // TODO: input-artifact, wait-input-artifacts, wait-timeout
     // TOOD: output-artifact, fail-if-output-artifacts-are-absent, skip-if-output-exist
     #[structopt(flatten)]
     pub slack: SlackWebhookOpt,
-
-    // TODO: custom_property
 
     // TODO: rename (object-store?)
     #[structopt(long)]
@@ -100,7 +99,7 @@ impl RunOpt {
         }
         let child = command
             .args(self.command_args.iter())
-            .env(env::KEY_CURRENT_EXECUTION_ID, execution_id.to_string())
+            .env(&self.execution_id_envvar, execution_id.to_string())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()?;
