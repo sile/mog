@@ -1162,6 +1162,7 @@ dependencies = [
  "git2",
  "hostname",
  "mlmd",
+ "serde_json",
  "slack-hook2",
  "structopt",
  "tempfile",

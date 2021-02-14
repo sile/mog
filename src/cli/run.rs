@@ -3,6 +3,7 @@ use crate::git;
 use crate::slack::SlackWebhookOpt;
 use crate::util::MetadataStoreOpt;
 use anyhow::Context as _;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
 use std::process::Command;
@@ -34,6 +35,8 @@ pub struct RunOpt {
     #[structopt(flatten)]
     pub slack: SlackWebhookOpt,
 
+    // TODO: custom_property
+
     // TODO: rename (object-store?)
     #[structopt(long)]
     pub storage: Option<PathBuf>,
@@ -60,25 +63,15 @@ impl RunOpt {
 
         let execution_type_id = store
             .put_execution_type("mog_run@0.0")
-            .can_add_fields() // TODO
-            .can_omit_fields() // TODO
+            .can_add_fields() // TODO: remove
+            .can_omit_fields() // TODO: remove
             .properties(properties.property_types())
             .execute()
             .await?;
 
-        let mut custom_properties = mlmd::metadata::PropertyValues::new();
-        for env in &self.envs {
-            // TODO(?): Use JSON
-            custom_properties.insert(format!("env_{}", env.key), env.value.clone().into());
-        }
-        for env in &self.secret_envs {
-            custom_properties.insert(format!("secret_env_{}", env.key), "".into());
-        }
-
         let mut req = store
             .post_execution(execution_type_id)
-            .properties(properties.property_values())
-            .custom_properties(custom_properties)
+            .properties(properties.property_values()?)
             .state(mlmd::metadata::ExecutionState::New);
         if let Some(v) = &self.execution_name {
             req = req.name(v);
@@ -260,6 +253,8 @@ pub struct ExecutionProperties {
     pub hostname: Option<String>,
     pub command: String,
     pub git: git::GitInfo,
+    pub envvars: BTreeMap<String, String>,
+    pub envvars_secret: BTreeSet<String>,
 }
 
 impl ExecutionProperties {
@@ -277,6 +272,9 @@ impl ExecutionProperties {
             );
         }
 
+        let envvars = opt.envs.iter().cloned().map(|e| (e.key, e.value)).collect();
+        let envvars_secret = opt.secret_envs.iter().cloned().map(|e| e.key).collect();
+
         Ok(Self {
             user: std::env::var("USER").ok(),
             hostname: hostname::get()
@@ -284,17 +282,21 @@ impl ExecutionProperties {
                 .and_then(|s| s.to_str().map(|s| s.to_owned())),
             command,
             git,
+            envvars,
+            envvars_secret,
         })
     }
 
     pub fn property_types(&self) -> mlmd::metadata::PropertyTypes {
         use mlmd::metadata::PropertyType;
 
-        // exit_code
+        // TODO: add exit_code
         vec![
             ("user", PropertyType::String),
             ("hostname", PropertyType::String),
             ("command", PropertyType::String),
+            ("envvars", PropertyType::String),
+            ("envvars_secret", PropertyType::String),
             ("git_commit", PropertyType::String),
             ("git_url", PropertyType::String),
             ("git_cwd", PropertyType::String),
@@ -309,7 +311,7 @@ impl ExecutionProperties {
         .collect()
     }
 
-    pub fn property_values(&self) -> mlmd::metadata::PropertyValues {
+    pub fn property_values(&self) -> anyhow::Result<mlmd::metadata::PropertyValues> {
         let mut properties = mlmd::metadata::PropertyValues::new();
         properties.insert("command".to_owned(), self.command.clone().into());
 
@@ -330,11 +332,24 @@ impl ExecutionProperties {
         }
         properties.insert("git_dirty".to_owned(), (self.git.is_dirty as i32).into());
 
-        properties
+        if !self.envvars.is_empty() {
+            properties.insert(
+                "envvars".to_owned(),
+                serde_json::to_string(&self.envvars)?.into(),
+            );
+        }
+        if !self.envvars_secret.is_empty() {
+            properties.insert(
+                "envvars_secret".to_owned(),
+                serde_json::to_string(&self.envvars_secret)?.into(),
+            );
+        }
+
+        Ok(properties)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EnvKeyValue {
     pub key: String,
     pub value: String,
