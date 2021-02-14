@@ -32,8 +32,6 @@ pub struct RunOpt {
     #[structopt(long)]
     pub context_name: Option<String>,
 
-    // TODO: input-artifact, wait-input-artifacts, wait-timeout
-    // TOOD: output-artifact, fail-if-output-artifacts-are-absent, skip-if-output-exist
     #[structopt(flatten)]
     pub slack: SlackWebhookOpt,
 
@@ -174,6 +172,11 @@ impl RunOpt {
         }
         if let Some(v) = &result.result_uri {
             put_request = put_request.property::<&str>("result_uri", v.as_str().into());
+        }
+        if let Ok(exit_status) = result.result {
+            if let Some(code) = exit_status.code() {
+                put_request = put_request.property("exit_code", code);
+            }
         }
         put_request.execute().await?;
         result.result?;
@@ -324,11 +327,11 @@ impl ExecutionProperties {
     pub fn property_types(&self) -> mlmd::metadata::PropertyTypes {
         use mlmd::metadata::PropertyType;
 
-        // TODO: add exit_code
         vec![
             ("user", PropertyType::String),
             ("hostname", PropertyType::String),
             ("command", PropertyType::String),
+            ("exit_code", PropertyType::Int),
             ("envvars", PropertyType::String),
             ("envvars_secret", PropertyType::String),
             ("git_commit", PropertyType::String),
@@ -336,9 +339,9 @@ impl ExecutionProperties {
             ("git_cwd", PropertyType::String),
             ("git_dirty", PropertyType::Int),
             ("storage", PropertyType::String),
-            ("stdout_uri", PropertyType::String),
-            ("stderr_uri", PropertyType::String),
-            ("result_uri", PropertyType::String),
+            ("stdout_uri", PropertyType::String), // TODO: Use artifact instead.
+            ("stderr_uri", PropertyType::String), // TODO: Ditto.
+            ("result_uri", PropertyType::String), // TODO: Ditto.
         ]
         .into_iter()
         .map(|(k, v)| (k.to_owned(), v))
