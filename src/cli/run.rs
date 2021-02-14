@@ -16,10 +16,13 @@ pub struct RunOpt {
     pub mlmd: MetadataStoreOpt,
 
     #[structopt(long = "env")]
-    pub envs: Vec<EnvKeyValue>,
+    pub envs: Vec<KeyValue>,
 
     #[structopt(long = "secret-env")]
-    pub secret_envs: Vec<EnvKeyValue>,
+    pub secret_envs: Vec<KeyValue>,
+
+    #[structopt(long = "custom-property")]
+    pub custom_properties: Vec<KeyValue>,
 
     #[structopt(long)]
     pub execution_name: Option<String>,
@@ -73,6 +76,9 @@ impl RunOpt {
             .post_execution(execution_type_id)
             .properties(properties.property_values()?)
             .state(mlmd::metadata::ExecutionState::New);
+        for x in &self.custom_properties {
+            req = req.custom_property(&x.key, x.value.as_str());
+        }
         if let Some(v) = &self.execution_name {
             req = req.name(v);
         }
@@ -350,12 +356,12 @@ impl ExecutionProperties {
 }
 
 #[derive(Debug, Clone)]
-pub struct EnvKeyValue {
+pub struct KeyValue {
     pub key: String,
     pub value: String,
 }
 
-impl std::str::FromStr for EnvKeyValue {
+impl std::str::FromStr for KeyValue {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
