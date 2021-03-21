@@ -8,7 +8,7 @@ enum Opt {
     Run(mog::cli::run::RunOpt),
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
     match opt {
