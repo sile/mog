@@ -1,5 +1,4 @@
 use crate::git;
-use crate::slack::SlackWebhookOpt;
 use crate::util::MetadataStoreOpt;
 use anyhow::Context as _;
 use std::collections::{BTreeMap, BTreeSet};
@@ -32,9 +31,6 @@ pub struct RunOpt {
     #[structopt(long)]
     pub context_name: Option<String>,
 
-    #[structopt(flatten)]
-    pub slack: SlackWebhookOpt,
-
     // object storage.
     #[structopt(long)]
     pub storage: Option<PathBuf>,
@@ -55,7 +51,6 @@ pub struct RunOpt {
 impl RunOpt {
     pub async fn execute(&self) -> anyhow::Result<()> {
         let mut store = self.mlmd.connect().await?;
-        let slack = self.slack.build()?;
 
         let properties = ExecutionProperties::new(self)?;
 
@@ -135,9 +130,6 @@ impl RunOpt {
             .state(mlmd::metadata::ExecutionState::Running)
             .execute()
             .await?;
-        slack
-            .post(&format!("Execution {} started.", execution_id.get()))
-            .await?;
 
         // TODO: signal handling
         let result = Runner::new(child, self)
@@ -149,15 +141,8 @@ impl RunOpt {
                 result_uri: None,
             });
         let state = if result.result.is_ok() {
-            // TODO: Elapsed time
-            slack
-                .post(&format!("Execution {} completed.", execution_id.get()))
-                .await?;
             mlmd::metadata::ExecutionState::Complete
         } else {
-            slack
-                .post(&format!("Execution {} failed.", execution_id.get()))
-                .await?;
             mlmd::metadata::ExecutionState::Failed
         };
         let mut put_request = store.put_execution(execution_id).state(state);
