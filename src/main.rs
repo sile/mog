@@ -3,6 +3,7 @@ use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
+#[allow(clippy::large_enum_variant)]
 enum Opt {
     Dashboard,
     Get(mog::cli::get::GetOpt),

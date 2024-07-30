@@ -16,11 +16,10 @@ impl GitInfo {
     }
 
     pub fn https_url(&self) -> Option<String> {
-        if let Some(host) = &self.origin_url.host {
-            Some(format!("https://{}/{}", host, self.origin_url.fullname))
-        } else {
-            None
-        }
+        self.origin_url
+            .host
+            .as_ref()
+            .map(|host| format!("https://{}/{}", host, self.origin_url.fullname))
     }
 }
 
@@ -33,7 +32,7 @@ impl GitInfo {
             .find_remote("origin")
             .or_fail()?
             .url()
-            .or_fail_with(|_| format!("origin URL is not a valid UTF-8"))
+            .or_fail_with(|_| "origin URL is not a valid UTF-8".to_string())
             .and_then(|s| {
                 GitUrl::parse(s)
                     .map_err(|e| orfail::Failure::new(format!("malformed URL: {:?} ({e})", s)))
@@ -51,7 +50,7 @@ impl GitInfo {
 
         let rootdir = repo
             .workdir()
-            .or_fail_with(|_| format!("this is a bare repository"))?;
+            .or_fail_with(|_| "this is a bare repository".to_string())?;
         let current_dir = std::env::current_dir()
             .or_fail()?
             .strip_prefix(rootdir)

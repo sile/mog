@@ -145,7 +145,7 @@ impl RunOpt {
         let result = Runner::new(child, self)
             .map(|runner| runner.run())
             .unwrap_or_else(|e| RunResult {
-                result: Err(e.into()),
+                result: Err(e),
                 stdout_uri: None,
                 stderr_uri: None,
                 result_uri: None,
@@ -157,16 +157,16 @@ impl RunOpt {
         };
         let mut put_request = store.put_execution(execution_id).state(state);
         if let Some(v) = self.storage.as_ref().and_then(|s| s.to_str()) {
-            put_request = put_request.property::<&str>("storage", v.into());
+            put_request = put_request.property::<&str>("storage", v);
         }
         if let Some(v) = &result.stdout_uri {
-            put_request = put_request.property::<&str>("stdout_uri", v.as_str().into());
+            put_request = put_request.property::<&str>("stdout_uri", v.as_str());
         }
         if let Some(v) = &result.stderr_uri {
-            put_request = put_request.property::<&str>("stderr_uri", v.as_str().into());
+            put_request = put_request.property::<&str>("stderr_uri", v.as_str());
         }
         if let Some(v) = &result.result_uri {
-            put_request = put_request.property::<&str>("result_uri", v.as_str().into());
+            put_request = put_request.property::<&str>("result_uri", v.as_str());
         }
         if let Ok(exit_status) = result.result {
             if let Some(code) = exit_status.code() {
