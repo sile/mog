@@ -792,12 +792,12 @@ dependencies = [
 name = "mog"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "funty",
  "git-url-parse",
  "git2",
  "hostname",
  "mlmd",
+ "orfail",
  "serde_json",
  "structopt",
  "tempfile",
@@ -948,6 +948,12 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
+
+[[package]]
+name = "orfail"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aba2212a0fddd290c8209fb9b0393382435ede29c24a71f245d7fa92f0f3442e"
 
 [[package]]
 name = "owo-colors"

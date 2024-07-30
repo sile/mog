@@ -1,6 +1,6 @@
 use crate::git;
 use crate::util::MetadataStoreOpt;
-use anyhow::Context as _;
+use orfail::OrFail;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
@@ -49,10 +49,10 @@ pub struct RunOpt {
 }
 
 impl RunOpt {
-    pub async fn execute(&self) -> anyhow::Result<()> {
-        let mut store = self.mlmd.connect().await?;
+    pub async fn execute(&self) -> orfail::Result<()> {
+        let mut store = self.mlmd.connect().await.or_fail()?;
 
-        let properties = ExecutionProperties::new(self)?;
+        let properties = ExecutionProperties::new(self).or_fail()?;
 
         let execution_type_id = store
             .put_execution_type("mog_run@0.0")
@@ -60,7 +60,8 @@ impl RunOpt {
             .can_omit_fields() // TODO: remove
             .properties(properties.property_types())
             .execute()
-            .await?;
+            .await
+            .or_fail()?;
 
         let mut req = store
             .post_execution(execution_type_id)
@@ -72,11 +73,15 @@ impl RunOpt {
         if let Some(v) = &self.execution_name {
             req = req.name(v);
         }
-        let execution_id = req.execute().await?;
+        let execution_id = req.execute().await.or_fail()?;
 
         let context_id = if let Some(context_name) = &self.context_name {
             let type_name = "mog_exp@0.0";
-            let context_type_id = store.put_context_type(type_name).execute().await?;
+            let context_type_id = store
+                .put_context_type(type_name)
+                .execute()
+                .await
+                .or_fail()?;
             let context_id = match store
                 .post_context(context_type_id, context_name)
                 .execute()
@@ -88,11 +93,12 @@ impl RunOpt {
                         .get_contexts()
                         .type_and_name(type_name, context_name)
                         .execute()
-                        .await?[0]
+                        .await
+                        .or_fail()?[0]
                         .id
                 }
                 Err(e) => {
-                    return Err(e)?;
+                    return Err(e).or_fail()?;
                 }
             };
             Some(context_id)
@@ -100,13 +106,15 @@ impl RunOpt {
             std::env::var(crate::env::KEY_CONTEXT_ID)
                 .ok()
                 .map(|s| s.parse().map(mlmd::metadata::ContextId::new))
-                .transpose()?
+                .transpose()
+                .or_fail()?
         };
         if let Some(context_id) = context_id {
             store
                 .put_association(context_id, execution_id)
                 .execute()
-                .await?;
+                .await
+                .or_fail()?;
         }
 
         let mut command = Command::new(&self.command_name);
@@ -124,12 +132,14 @@ impl RunOpt {
             .env(&self.execution_id_envvar, execution_id.to_string())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .spawn()?;
+            .spawn()
+            .or_fail()?;
         store
             .put_execution(execution_id)
             .state(mlmd::metadata::ExecutionState::Running)
             .execute()
-            .await?;
+            .await
+            .or_fail()?;
 
         // TODO: signal handling
         let result = Runner::new(child, self)
@@ -163,7 +173,7 @@ impl RunOpt {
                 put_request = put_request.property("exit_code", code);
             }
         }
-        put_request.execute().await?;
+        put_request.execute().await.or_fail()?;
         result.result?;
 
         Ok(())
@@ -172,7 +182,7 @@ impl RunOpt {
 
 #[derive(Debug)]
 pub struct RunResult {
-    result: anyhow::Result<std::process::ExitStatus>,
+    result: orfail::Result<std::process::ExitStatus>,
     stdout_uri: Option<String>,
     stderr_uri: Option<String>,
     result_uri: Option<String>,
@@ -189,11 +199,11 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(child: std::process::Child, opt: &RunOpt) -> anyhow::Result<Self> {
+    pub fn new(child: std::process::Child, opt: &RunOpt) -> orfail::Result<Self> {
         Ok(Self {
             child,
-            stdout: NamedTempFile::new()?,
-            stderr: NamedTempFile::new()?,
+            stdout: NamedTempFile::new().or_fail()?,
+            stderr: NamedTempFile::new().or_fail()?,
             storage: opt.storage.clone(),
             result_dir: opt.result_dir.clone(),
             sweep_result_dir: opt.sweep_result_dir,
@@ -249,20 +259,20 @@ impl Runner {
         result
     }
 
-    fn run_inner(&mut self) -> anyhow::Result<std::process::ExitStatus> {
+    fn run_inner(&mut self) -> orfail::Result<std::process::ExitStatus> {
         let mut buf = vec![0u8; 4096];
         loop {
             if let Some(r) = &mut self.child.stdout {
-                let n = r.read(&mut buf)?;
-                self.stdout.write_all(&buf[..n])?;
-                std::io::stdout().write_all(&buf[..n])?;
+                let n = r.read(&mut buf).or_fail()?;
+                self.stdout.write_all(&buf[..n]).or_fail()?;
+                std::io::stdout().write_all(&buf[..n]).or_fail()?;
             }
             if let Some(r) = &mut self.child.stderr {
-                let n = r.read(&mut buf)?;
-                self.stderr.write_all(&buf[..n])?;
-                std::io::stderr().write_all(&buf[..n])?;
+                let n = r.read(&mut buf).or_fail()?;
+                self.stderr.write_all(&buf[..n]).or_fail()?;
+                std::io::stderr().write_all(&buf[..n]).or_fail()?;
             }
-            if let Some(exit_status) = self.child.try_wait()? {
+            if let Some(exit_status) = self.child.try_wait().or_fail()? {
                 return Ok(exit_status);
             }
         }
@@ -280,18 +290,17 @@ pub struct ExecutionProperties {
 }
 
 impl ExecutionProperties {
-    pub fn new(opt: &RunOpt) -> anyhow::Result<Self> {
+    pub fn new(opt: &RunOpt) -> orfail::Result<Self> {
         let mut command = opt.command_name.clone();
         if !opt.command_args.is_empty() {
             command += &opt.command_args.join(" ");
         }
 
-        let git = git::GitInfo::new(std::env::current_dir()?)?;
-        if opt.forbid_dirty {
-            anyhow::ensure!(
-                !git.is_dirty,
-                "there are dirty files that aren't commited to the git repository."
-            );
+        let git = git::GitInfo::new(std::env::current_dir().or_fail()?).or_fail()?;
+        if opt.forbid_dirty && !git.is_dirty {
+            return Err(orfail::Failure::new(
+                "there are dirty files that aren't commited to the git repository.",
+            ));
         }
 
         let envvars = opt.envs.iter().cloned().map(|e| (e.key, e.value)).collect();
@@ -333,7 +342,7 @@ impl ExecutionProperties {
         .collect()
     }
 
-    pub fn property_values(&self) -> anyhow::Result<mlmd::metadata::PropertyValues> {
+    pub fn property_values(&self) -> orfail::Result<mlmd::metadata::PropertyValues> {
         let mut properties = mlmd::metadata::PropertyValues::new();
         properties.insert("command".to_owned(), self.command.clone().into());
 
@@ -357,13 +366,15 @@ impl ExecutionProperties {
         if !self.envvars.is_empty() {
             properties.insert(
                 "envvars".to_owned(),
-                serde_json::to_string(&self.envvars)?.into(),
+                serde_json::to_string(&self.envvars).or_fail()?.into(),
             );
         }
         if !self.envvars_secret.is_empty() {
             properties.insert(
                 "envvars_secret".to_owned(),
-                serde_json::to_string(&self.envvars_secret)?.into(),
+                serde_json::to_string(&self.envvars_secret)
+                    .or_fail()?
+                    .into(),
             );
         }
 
@@ -378,7 +389,7 @@ pub struct KeyValue {
 }
 
 impl std::str::FromStr for KeyValue {
-    type Err = anyhow::Error;
+    type Err = orfail::Failure;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut iter = s.splitn(2, '=');
@@ -387,7 +398,7 @@ impl std::str::FromStr for KeyValue {
             value.to_owned()
         } else {
             std::env::var(&key)
-                .with_context(|| format!("cannot get the value of the envvar {:?}", key))?
+                .or_fail_with(|e| format!("cannot get the value of the envvar {:?} ({e})", key))?
                 .to_owned()
         };
         Ok(Self { key, value })

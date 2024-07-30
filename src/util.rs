@@ -1,10 +1,10 @@
 use crate::env;
-use anyhow::Context;
+use orfail::OrFail;
 
-pub async fn mlmd_connect(database_uri: &str) -> anyhow::Result<mlmd::MetadataStore> {
+pub async fn mlmd_connect(database_uri: &str) -> orfail::Result<mlmd::MetadataStore> {
     let store = mlmd::MetadataStore::connect(database_uri)
         .await
-        .with_context(|| format!("cannot connect to the database: {:?}", database_uri))?;
+        .or_fail_with(|e| format!("cannot connect to the database: {:?} ({e})", database_uri))?;
     Ok(store)
 }
 
@@ -15,7 +15,7 @@ pub struct MetadataStoreOpt {
 }
 
 impl MetadataStoreOpt {
-    pub async fn connect(&self) -> anyhow::Result<mlmd::MetadataStore> {
-        mlmd_connect(&self.database).await
+    pub async fn connect(&self) -> orfail::Result<mlmd::MetadataStore> {
+        mlmd_connect(&self.database).await.or_fail()
     }
 }

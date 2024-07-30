@@ -1,5 +1,5 @@
-use anyhow::Context;
 use git_url_parse::GitUrl;
+use orfail::OrFail;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -25,30 +25,37 @@ impl GitInfo {
 }
 
 impl GitInfo {
-    pub fn new<P: AsRef<Path>>(dir: P) -> anyhow::Result<Self> {
-        let repo = git2::Repository::discover(dir)?;
-        let head = repo.head()?;
-        let commit = head.peel_to_commit()?.id();
+    pub fn new<P: AsRef<Path>>(dir: P) -> orfail::Result<Self> {
+        let repo = git2::Repository::discover(dir).or_fail()?;
+        let head = repo.head().or_fail()?;
+        let commit = head.peel_to_commit().or_fail()?.id();
         let origin_url = repo
-            .find_remote("origin")?
+            .find_remote("origin")
+            .or_fail()?
             .url()
-            .ok_or_else(|| anyhow::anyhow!("origin URL is not a valid UTF-8"))
-            .and_then(|s| GitUrl::parse(s).with_context(|| format!("malformed URL: {:?}", s)))?;
+            .or_fail_with(|_| format!("origin URL is not a valid UTF-8"))
+            .and_then(|s| {
+                GitUrl::parse(s)
+                    .map_err(|e| orfail::Failure::new(format!("malformed URL: {:?} ({e})", s)))
+            })?;
 
-        let head_tree = head.peel_to_tree()?;
+        let head_tree = head.peel_to_tree().or_fail()?;
         let mut diff_opt = git2::DiffOptions::new();
         diff_opt.include_untracked(true);
         let diff_files = repo
-            .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opt))?
+            .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opt))
+            .or_fail()?
             .deltas()
             .len();
         let is_dirty = diff_files > 0;
 
         let rootdir = repo
             .workdir()
-            .ok_or_else(|| anyhow::anyhow!("this is a bare repository"))?;
-        let current_dir = std::env::current_dir()?
-            .strip_prefix(rootdir)?
+            .or_fail_with(|_| format!("this is a bare repository"))?;
+        let current_dir = std::env::current_dir()
+            .or_fail()?
+            .strip_prefix(rootdir)
+            .or_fail()?
             .to_path_buf();
         Ok(Self {
             commit,

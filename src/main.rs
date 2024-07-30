@@ -1,3 +1,4 @@
+use orfail::OrFail;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -9,12 +10,12 @@ enum Opt {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> orfail::Result<()> {
     let opt = Opt::from_args();
     match opt {
         Opt::Dashboard => todo!(),
-        Opt::Get(opt) => opt.execute().await?,
-        Opt::Run(opt) => opt.execute().await?,
+        Opt::Get(opt) => opt.execute().await.or_fail()?,
+        Opt::Run(opt) => opt.execute().await.or_fail()?,
     }
     Ok(())
 }
